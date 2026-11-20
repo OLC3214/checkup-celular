@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Atualizar o banco de vírus e consultar o VirusTotal -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Ver a lista de apps instalados (para achar os suspeitos) -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <!-- Abrir a tela de desinstalar (o usuário sempre confirma) -->

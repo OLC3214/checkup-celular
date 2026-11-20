@@ -1,6 +1,17 @@
 # Check-up Celular (Android)
 
-O que o app faz:
+## Duas varreduras
+- **Rápida (~15 s):** apps instalados, banco de apps espiões conhecidos, segurança básica e pasta Download.
+- **Completa (1–5 min):** tudo da rápida + VirusTotal (~70 antivírus, chave grátis), assinatura dos apps,
+  imitação de apps famosos, memória inteira (abre cada APK por dentro), root, VPN e certificados.
+
+## Vírus confirmados x suspeitos
+- **Confirmado:** o app está no banco de apps espiões da Echap ou 3+ antivírus do VirusTotal acusam.
+- **Suspeito:** sinais de risco (fora da loja, escondido, acessibilidade...), mas sem prova.
+
+Banco de apps espiões: [AssoEchap/stalkerware-indicators](https://github.com/AssoEchap/stalkerware-indicators), licença CC-BY 4.0.
+
+## Detalhes
 1. **Apps suspeitos** – lista apps instalados fora da loja, escondidos (sem ícone), com Acessibilidade ligada,
    administradores do aparelho, leitores de SMS/notificações. Botão para desinstalar direto.
 2. **Segurança** – senha de tela, depuração USB, opções do desenvolvedor, idade da atualização de segurança.
