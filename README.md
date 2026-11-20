@@ -5,6 +5,10 @@
 - **Completa (1–5 min):** tudo da rápida + VirusTotal (~70 antivírus, chave grátis), assinatura dos apps,
   imitação de apps famosos, memória inteira (abre cada APK por dentro), root, VPN e certificados.
 
+## Otimizar
+Fecha apps em segundo plano (libera RAM), mostra espaço livre, limpa lixo, lista apps parados há 30+ dias,
+apps com mais cache e apps fora da economia de bateria.
+
 ## Vírus confirmados x suspeitos
 - **Confirmado:** o app está no banco de apps espiões da Echap ou 3+ antivírus do VirusTotal acusam.
 - **Suspeito:** sinais de risco (fora da loja, escondido, acessibilidade...), mas sem prova.

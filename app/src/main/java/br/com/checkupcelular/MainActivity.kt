@@ -42,6 +42,9 @@ class MainActivity : Activity() {
     private lateinit var scroll: ScrollView
     private var report: Report? = null
     @Volatile private var running = false
+    /** "scan" = mostrando relatório de varredura; "opt" = mostrando otimização */
+    private var screen = ""
+    private var optWaitingPermission = false
 
     private val green = 0xFF1B8A3C.toInt()
     private val orange = 0xFFE07B00.toInt()
@@ -66,6 +69,8 @@ class MainActivity : Activity() {
 
         root.addView(scanButton("⚡  Varredura rápida", "Uns 15 segundos · apps, banco de apps espiões, segurança e Downloads", blue) { startScan(false) })
         root.addView(scanButton("🔍  Varredura completa", "1 a 5 minutos · tudo da rápida + VirusTotal, assinaturas, memória inteira, root, VPN e certificados", dark) { startScan(true) })
+
+        root.addView(scanButton("🚀  Otimizar", "Libera memória RAM, limpa lixo e mostra o que deixa o celular lento ou gastando bateria", green) { startOptimize() })
 
         root.addView(TextView(this).apply {
             text = if (vtKey.isEmpty()) "⚙️ Configurar VirusTotal (deixa a varredura completa muito mais forte)" else "⚙️ VirusTotal configurado ✓"
@@ -96,8 +101,13 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         // Voltou da tela de desinstalar? Tira do relatório o que já foi removido, sem refazer a varredura.
-        val r = report ?: return
         if (running) return
+        if (screen == "opt") {
+            if (optWaitingPermission) { optWaitingPermission = false; startOptimize() }
+            return
+        }
+        val r = report ?: return
+        if (screen != "scan") return
         r.apps = r.apps.filter { isInstalled(it.pkg) }
         render(r)
     }
@@ -199,6 +209,7 @@ class MainActivity : Activity() {
     // ================= RELATÓRIO =================
 
     private fun render(r: Report) {
+        screen = "scan"
         results.removeAllViews()
         val confirmed = r.apps.filter { it.confirmed != null }
         val suspects = r.apps.filter { it.confirmed == null }
@@ -337,7 +348,7 @@ class MainActivity : Activity() {
         if (a.isAdmin) addView(smallButton("Remover administrador", orange) { safeStart(Intent(Settings.ACTION_SECURITY_SETTINGS)) })
     }
 
-    private fun confirmDelete(items: List<FileItem>) {
+    private fun confirmDelete(items: List<FileItem>, after: (() -> Unit)? = null) {
         val total = items.sumOf { it.size }
         AlertDialog.Builder(this)
             .setTitle("Apagar ${items.size} item(ns)?")
@@ -346,19 +357,177 @@ class MainActivity : Activity() {
                 Thread {
                     val freed = Cleaner.delete(items)
                     runOnUiThread {
-                        val r = report
-                        if (r != null) {
-                            val gone = items.map { it.file.absolutePath }.toSet()
-                            report = Report(r.deep, r.apps, r.device, r.files?.filter { it.file.absolutePath !in gone },
-                                r.fileThreats.filterKeys { it !in gone }, r.dbFamilies, r.dbSource, r.vtChecked, r.vtStatus, r.seconds)
-                            render(report!!)
+                        if (after != null) {
+                            after()
+                        } else {
+                            val r = report
+                            if (r != null) {
+                                val gone = items.map { it.file.absolutePath }.toSet()
+                                report = Report(r.deep, r.apps, r.device, r.files?.filter { it.file.absolutePath !in gone },
+                                    r.fileThreats.filterKeys { it !in gone }, r.dbFamilies, r.dbSource, r.vtChecked, r.vtStatus, r.seconds)
+                                render(report!!)
+                            }
                         }
-                        results.addView(label("Liberado: ${fmt(freed)}", 15f, true, green), 0)
+                        results.addView(label("✅ Liberado: ${fmt(freed)}", 15f, true, green), 0)
                     }
                 }.start()
             }
             .setNegativeButton("Cancelar", null)
             .show()
+    }
+
+    // ================= OTIMIZAR =================
+
+    private class OptResult(
+        val ramBefore: Long, val ramAfter: Long, val ramTotal: Long, val closed: Int,
+        val storageFree: Long, val storageTotal: Long,
+        val junk: List<FileItem>?,
+        val usageAccess: Boolean,
+        val unused: List<Optimizer.AppInfo>,
+        val caches: List<Optimizer.AppInfo>,
+        val battery: List<Optimizer.AppInfo>
+    )
+
+    private fun startOptimize() {
+        if (running) return
+        running = true
+        screen = "opt"
+        results.removeAllViews()
+        val status = label("Preparando...", 15f, color = gray)
+        results.addView(card().apply {
+            addView(label("🚀 Otimizando", 16f, true))
+            addView(status)
+        })
+        val progress: (String) -> Unit = { msg -> runOnUiThread { status.text = msg } }
+        Thread {
+            val r = try {
+                val (before, total) = Optimizer.ram(this)
+                val closed = Optimizer.closeBackground(this, progress)
+                Thread.sleep(1500)
+                val after = Optimizer.ram(this).first
+                progress("Medindo espaço...")
+                val (free, size) = Optimizer.storage()
+                val junk = if (hasFileAccess()) Cleaner.scan(this, false, progress).filter { it.junk } else null
+                val usage = Optimizer.hasUsageAccess(this)
+                progress("Procurando apps parados e com muito cache...")
+                val unused = if (usage) Optimizer.unusedApps(this) else emptyList()
+                val caches = if (usage) Optimizer.biggestCaches(this) else emptyList()
+                progress("Verificando bateria...")
+                val battery = Optimizer.batteryExempt(this)
+                OptResult(before, after, total, closed, free, size, junk, usage, unused, caches, battery)
+            } catch (e: Exception) { null }
+            running = false
+            runOnUiThread {
+                if (r == null) {
+                    results.removeAllViews()
+                    results.addView(card().apply { addView(label("Erro ao otimizar. Tente de novo.", 15f, true, red)) })
+                } else {
+                    renderOpt(r)
+                    scroll.post { scroll.smoothScrollTo(0, results.top) }
+                }
+            }
+        }.start()
+    }
+
+    private fun renderOpt(r: OptResult) {
+        screen = "opt"
+        results.removeAllViews()
+        val freedRam = (r.ramAfter - r.ramBefore).coerceAtLeast(0)
+        val usedPct = 100 - (r.storageFree * 100 / r.storageTotal.coerceAtLeast(1))
+
+        results.addView(section("🚀 Otimização", green))
+
+        results.addView(card().apply {
+            addView(label("🧠 Memória RAM", 16f, true))
+            addView(label("Livre agora: ${fmt(r.ramAfter)} de ${fmt(r.ramTotal)}" + if (freedRam > 0) " (+${fmt(freedRam)} liberados)" else "", 14f, true, green))
+            addView(label("${r.closed} apps tiveram os processos em segundo plano fechados. O Android pode reabrir alguns que precisam rodar sempre (WhatsApp, por exemplo). Isso é normal.", 12f, color = gray))
+        })
+
+        results.addView(card().apply {
+            addView(label("💾 Armazenamento", 16f, true))
+            addView(label("Livre: ${fmt(r.storageFree)} de ${fmt(r.storageTotal)} ($usedPct% usado)", 14f, true, if (usedPct >= 90) red else if (usedPct >= 80) orange else green))
+            if (usedPct >= 85) addView(label("Celular com menos de 15% livre fica lento. Libere espaço com as dicas abaixo.", 13f, color = orange))
+            addView(smallButton("Abrir armazenamento", dark) { safeStart(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)) })
+        })
+
+        results.addView(card().apply {
+            addView(label("🧹 Lixo", 16f, true))
+            when {
+                r.junk == null -> {
+                    addView(label("Precisa da permissão de arquivos para achar lixo.", 13f, color = gray))
+                    addView(smallButton("Dar permissão", dark) { optWaitingPermission = true; requestFileAccess() })
+                }
+                r.junk.isEmpty() -> addView(label("✅ Nada para limpar.", 14f, true, green))
+                else -> {
+                    val size = r.junk.sumOf { it.size }
+                    addView(label("${r.junk.size} arquivo(s) inúteis · ${fmt(size)}", 14f, true))
+                    addView(smallButton("Limpar (${fmt(size)})", red) { confirmDelete(r.junk) { startOptimize() } })
+                }
+            }
+        })
+
+        if (!r.usageAccess) {
+            results.addView(card().apply {
+                addView(label("📊 Análise de uso dos apps", 16f, true))
+                addView(label("Para mostrar apps que você não usa e os que acumulam mais cache, libere \"Acesso ao uso\" para o Check-up Celular.", 13f, color = gray))
+                addView(smallButton("Liberar acesso", dark) {
+                    optWaitingPermission = true
+                    safeStart(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                })
+            })
+        } else {
+            results.addView(card().apply {
+                addView(label("📦 Apps parados há mais de 30 dias", 16f, true))
+                if (r.unused.isEmpty()) addView(label("✅ Nenhum. Você usa tudo que tem instalado.", 14f, true, green))
+                else {
+                    val total = r.unused.sumOf { it.bytes }
+                    addView(label("${r.unused.size} app(s) ocupando ${fmt(total)}. Desinstalar libera espaço e memória.", 13f, color = gray))
+                    for (a in r.unused.take(15)) addView(appLine(a, "Desinstalar", red) {
+                        startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${a.pkg}")))
+                    })
+                }
+            })
+            results.addView(card().apply {
+                addView(label("🗂️ Apps com mais cache", 16f, true))
+                if (r.caches.isEmpty()) addView(label("✅ Nenhum app com cache grande.", 14f, true, green))
+                else {
+                    addView(label("Toque em \"Limpar\" e depois em \"Armazenamento > Limpar cache\". Não apaga suas conversas nem fotos.", 13f, color = gray))
+                    for (a in r.caches) addView(appLine(a, "Limpar", dark) {
+                        safeStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${a.pkg}")))
+                    })
+                }
+            })
+        }
+
+        results.addView(card().apply {
+            addView(label("🔋 Bateria", 16f, true))
+            if (r.battery.isEmpty()) addView(label("✅ Todos os apps estão na economia de bateria.", 14f, true, green))
+            else {
+                addView(label("Estes apps estão fora da economia de bateria e podem rodar o tempo todo. Se não precisa (ex.: não é app de alarme ou do relógio), coloque de volta.", 13f, color = gray))
+                for (a in r.battery.take(15)) addView(label("• ${a.label}", 14f))
+                addView(smallButton("Abrir economia de bateria", dark) { safeStart(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) })
+            }
+        })
+
+        results.addView(card().apply {
+            addView(label("⚡ Deixar mais rápido (manual)", 16f, true))
+            addView(label("Em Opções do desenvolvedor, mude \"Escala de animação\" (as 3 opções) para 0,5x. O celular parece bem mais rápido. Depois desative as Opções do desenvolvedor.", 13f, color = gray))
+            addView(label("Reinicie o celular pelo menos 1 vez por semana.", 13f, color = gray))
+        })
+    }
+
+    private fun appLine(a: Optimizer.AppInfo, action: String, color: Int, onClick: () -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = android.view.Gravity.CENTER_VERTICAL
+        setPadding(0, dp(4), 0, dp(4))
+        val texts = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            addView(label(a.label, 14f, true))
+            addView(label(a.detail + if (a.bytes > 0) " · ${fmt(a.bytes)}" else "", 12f, color = gray))
+        }
+        addView(texts)
+        addView(smallButton(action, color, onClick))
     }
 
     // ================= VIRUSTOTAL =================
