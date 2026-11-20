@@ -8,7 +8,8 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "br.com.checkupcelular"
+        // -PappId=... só é usado no teste automático (gera uma cópia com outro nome de pacote)
+        applicationId = (project.findProperty("appId") as String?) ?: "br.com.checkupcelular"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
