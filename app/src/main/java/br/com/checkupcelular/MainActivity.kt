@@ -46,56 +46,100 @@ class MainActivity : Activity() {
     private var screen = ""
     private var optWaitingPermission = false
 
-    private val green = 0xFF1B8A3C.toInt()
-    private val orange = 0xFFE07B00.toInt()
-    private val red = 0xFFC62828.toInt()
-    private val dark = 0xFF1F2328.toInt()
-    private val gray = 0xFF5F6368.toInt()
-    private val blue = 0xFF1A73E8.toInt()
+    // ---------- Paleta (claro / escuro automático) ----------
+    private val night by lazy {
+        resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
+    private fun pick(light: Long, darkMode: Long) = (if (night) darkMode else light).toInt()
+    private val bg by lazy { pick(0xFFF5F6F8, 0xFF0F1115) }
+    private val surface by lazy { pick(0xFFFFFFFF, 0xFF1A1D23) }
+    private val line by lazy { pick(0xFFE8EAEE, 0xFF262A31) }
+    private val dark by lazy { pick(0xFF14171C, 0xFFE8EAED) }   // texto principal
+    private val gray by lazy { pick(0xFF6B7280, 0xFF9AA0A6) }   // texto secundário
+    private val blue by lazy { pick(0xFF2563EB, 0xFF60A5FA) }
+    private val green by lazy { pick(0xFF16A34A, 0xFF4ADE80) }
+    private val orange by lazy { pick(0xFFD97706, 0xFFFBBF24) }
+    private val red by lazy { pick(0xFFDC2626, 0xFFF87171) }
 
     private val prefs by lazy { getSharedPreferences("cfg", MODE_PRIVATE) }
     private val vtKey get() = prefs.getString("vt_key", "")?.trim() ?: ""
 
+    private lateinit var ring: ScoreRing
+    private lateinit var ringNote: TextView
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (night) setTheme(android.R.style.Theme_DeviceDefault_NoActionBar)
         super.onCreate(savedInstanceState)
+        window.statusBarColor = bg
+        window.navigationBarColor = bg
+        @Suppress("DEPRECATION")
+        if (!night) window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or (if (Build.VERSION.SDK_INT >= 26) View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(24), dp(16), dp(24))
+            setPadding(dp(20), dp(28), dp(20), dp(32))
         }
-        root.addView(label("Check-up Celular", 26f, true))
-        root.addView(label("por ${Config.NOME} · ${Config.SERVICO}", 14f, true, blue))
-        root.addView(label("Procura vírus conhecidos, apps suspeitos, problemas de segurança e arquivos inúteis. Nada é apagado sem você confirmar.", 14f, color = gray))
 
-        root.addView(scanButton("⚡  Varredura rápida", "Uns 15 segundos · apps, banco de apps espiões, segurança e Downloads", blue) { startScan(false) })
-        root.addView(scanButton("🔍  Varredura completa", "1 a 5 minutos · tudo da rápida + VirusTotal, assinaturas, memória inteira, root, VPN e certificados", dark) { startScan(true) })
+        // ---- Cabeçalho ----
+        root.addView(label("Check-up", 28f, true))
+        root.addView(label("por ${Config.NOME}", 13f, color = gray))
 
-        root.addView(scanButton("🚀  Otimizar", "Libera memória RAM, limpa lixo e mostra o que deixa o celular lento ou gastando bateria", green) { startOptimize() })
+        // ---- Anel de saúde ----
+        ring = ScoreRing(this).apply {
+            textColor = dark; mutedColor = gray
+            trackColor = if (night) 0x33FFFFFF else 0x14000000
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(210)).apply { topMargin = dp(20) }
+        }
+        root.addView(ring)
+        ringNote = label("", 13f, color = gray).apply { gravity = android.view.Gravity.CENTER }
+        root.addView(ringNote)
+        updateRing()
 
-        root.addView(TextView(this).apply {
-            text = if (vtKey.isEmpty()) "⚙️ Configurar VirusTotal (deixa a varredura completa muito mais forte)" else "⚙️ VirusTotal configurado ✓"
-            setTextColor(blue); textSize = 14f
-            setPadding(0, dp(12), 0, dp(4))
-            setOnClickListener { showVtSetup() }
-        })
+        // ---- Ação principal ----
+        root.addView(primaryButton("Varredura rápida", R.drawable.ic_bolt) { startScan(false) })
+
+        // ---- Atalhos ----
+        val tiles = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) }
+        }
+        tiles.addView(tile("Varredura completa", "VirusTotal, memória inteira, root", R.drawable.ic_search, blue, true) { startScan(true) })
+        tiles.addView(tile("Otimizar", "RAM, lixo, bateria", R.drawable.ic_speed, green, false) { startOptimize() })
+        root.addView(tiles)
+
+        // ---- Lista discreta ----
+        root.addView(listCard(
+            listRow(R.drawable.ic_shield, blue, if (vtKey.isEmpty()) "Configurar VirusTotal" else "VirusTotal",
+                if (vtKey.isEmpty()) "Deixa a varredura completa mais forte" else "Configurado ✓") { showVtSetup() },
+            listRow(R.drawable.ic_chat, green, "Ajuda no WhatsApp", Config.WHATSAPP_EXIBIDO) {
+                safeStart(Intent(Intent.ACTION_VIEW, Uri.parse(Config.WHATSAPP_LINK)))
+            }
+        ))
 
         results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(results)
 
-        root.addView(card().apply {
-            addView(label("Precisa de ajuda?", 16f, true))
-            addView(label("Achou algo estranho ou o app não sai? Fale com ${Config.NOME}: ${Config.WHATSAPP_EXIBIDO}", 14f, color = gray))
-            addView(smallButton("Chamar no WhatsApp", green) {
-                safeStart(Intent(Intent.ACTION_VIEW, Uri.parse(Config.WHATSAPP_LINK)))
-            })
+        root.addView(label("Nada é apagado sem você confirmar.\nBanco de apps espiões: Echap stalkerware-indicators (CC-BY 4.0).", 11f, color = gray).apply {
+            gravity = android.view.Gravity.CENTER; setPadding(0, dp(28), 0, 0)
         })
-        root.addView(label("Banco de apps espiões: Echap stalkerware-indicators (CC-BY 4.0).", 11f, color = gray).apply { setPadding(0, dp(12), 0, 0) })
 
         scroll = ScrollView(this).apply {
-            setBackgroundColor(0xFFF4F6F8.toInt())
+            setBackgroundColor(bg)
+            isVerticalScrollBarEnabled = false
             addView(root)
         }
         setContentView(scroll)
+    }
+
+    private fun updateRing() {
+        val sc = prefs.getInt("last_score", -1)
+        ring.score = sc
+        ring.ringColor = when { sc < 0 -> gray; sc < 50 -> red; sc < 80 -> orange; else -> green }
+        val at = prefs.getLong("last_time", 0L)
+        ringNote.text = if (sc < 0) "Ainda não verificado" else
+            "Última varredura: " + android.text.format.DateUtils.getRelativeTimeSpanString(at, System.currentTimeMillis(), 60_000L)
     }
 
     override fun onResume() {
@@ -223,6 +267,8 @@ class MainActivity : Activity() {
 
         val score = (100 - confirmedTotal * 40 - high * 15 - med * 7 - low * 2 - badDevice * 6).coerceIn(0, 100)
         val scoreColor = when { confirmedTotal > 0 || score < 50 -> red; score < 80 -> orange; else -> green }
+        prefs.edit().putInt("last_score", score).putLong("last_time", System.currentTimeMillis()).apply()
+        updateRing()
 
         // ---- Resumo ----
         results.addView(card().apply {
@@ -597,43 +643,112 @@ class MainActivity : Activity() {
         setPadding(0, dp(2), 0, dp(2))
     }
 
-    private fun section(s: String, color: Int) = label(s, 19f, true, color).apply { setPadding(0, dp(20), 0, dp(2)) }
+    private fun section(s: String, color: Int) = label(s.uppercase(), 12f, true, color).apply {
+        letterSpacing = 0.08f
+        setPadding(dp(4), dp(28), 0, dp(2))
+    }
+
+    private fun rounded(color: Int, radius: Int, stroke: Int? = null) = GradientDrawable().apply {
+        setColor(color); cornerRadius = dp(radius).toFloat()
+        if (stroke != null) setStroke(dp(1), stroke)
+    }
+
+    private fun tint(color: Int, alpha: Int) = (color and 0x00FFFFFF) or (alpha shl 24)
 
     private fun card() = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(14), dp(12), dp(14), dp(12))
-        background = GradientDrawable().apply {
-            setColor(Color.WHITE)
-            cornerRadius = dp(12).toFloat()
-            setStroke(dp(1), 0xFFDADCE0.toInt())
-        }
+        setPadding(dp(18), dp(16), dp(18), dp(16))
+        background = rounded(surface, 20, line)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(10) }
     }
 
-    private fun scanButton(title: String, sub: String, color: Int, onClick: () -> Unit) = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(16), dp(14), dp(16), dp(14))
-        background = GradientDrawable().apply { setColor(color); cornerRadius = dp(14).toFloat() }
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = dp(12) }
-        addView(label(title, 18f, true, Color.WHITE))
-        addView(label(sub, 13f, color = 0xDDFFFFFF.toInt()))
+    private fun icon(res: Int, color: Int, box: Int, size: Int) = android.widget.FrameLayout(this).apply {
+        background = rounded(tint(color, 0x22), box / 2)
+        layoutParams = LinearLayout.LayoutParams(dp(box), dp(box))
+        addView(android.widget.ImageView(this@MainActivity).apply {
+            setImageResource(res); setColorFilter(color)
+            layoutParams = android.widget.FrameLayout.LayoutParams(dp(size), dp(size), android.view.Gravity.CENTER)
+        })
+    }
+
+    private fun primaryButton(title: String, res: Int, onClick: () -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = android.view.Gravity.CENTER
+        background = rounded(blue, 28)
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(56)).apply { topMargin = dp(16) }
+        val onBlue = if (night) 0xFF0F1115.toInt() else Color.WHITE
+        addView(android.widget.ImageView(this@MainActivity).apply {
+            setImageResource(res); setColorFilter(onBlue)
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) }
+        })
+        addView(label(title, 16f, true, onBlue).apply { setPadding(0, 0, 0, 0) })
         isClickable = true
         setOnClickListener { onClick() }
     }
 
+    private fun tile(title: String, sub: String, res: Int, color: Int, first: Boolean, onClick: () -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(16), dp(16), dp(16), dp(16))
+        background = rounded(surface, 20, line)
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+            if (first) marginEnd = dp(6) else marginStart = dp(6)
+        }
+        addView(icon(res, color, 40, 20))
+        addView(label(title, 15f, true).apply { setPadding(0, dp(12), 0, 0) })
+        addView(label(sub, 12f, color = gray))
+        isClickable = true
+        setOnClickListener { onClick() }
+    }
+
+    private fun listRow(res: Int, color: Int, title: String, sub: String, onClick: () -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = android.view.Gravity.CENTER_VERTICAL
+        setPadding(dp(16), dp(12), dp(12), dp(12))
+        addView(icon(res, color, 36, 18))
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            addView(label(title, 14f, true))
+            addView(label(sub, 12f, color = gray))
+        })
+        addView(android.widget.ImageView(this@MainActivity).apply {
+            setImageResource(R.drawable.ic_chevron); setColorFilter(gray)
+            layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+        })
+        isClickable = true
+        setOnClickListener { onClick() }
+    }
+
+    private fun listCard(vararg rows: View) = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = rounded(surface, 20, line)
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) }
+        rows.forEachIndexed { i, r ->
+            if (i > 0) addView(View(this@MainActivity).apply {
+                setBackgroundColor(line)
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply { marginStart = dp(64) }
+            })
+            addView(r)
+        }
+    }
+
+    /** Botão discreto: fundo na cor com transparência, texto na cor. Funciona no claro e no escuro. */
     private fun smallButton(s: String, color: Int, onClick: () -> Unit) = Button(this).apply {
         text = s
         isAllCaps = false
-        setTextColor(Color.WHITE)
-        background = GradientDrawable().apply { setColor(color); cornerRadius = dp(8).toFloat() }
+        textSize = 14f
+        setTypeface(typeface, Typeface.BOLD)
+        setTextColor(color)
+        background = rounded(tint(color, 0x1F), 20)
+        stateListAnimator = null
+        minHeight = 0; minimumHeight = 0
         layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT, dp(42)
-        ).apply { topMargin = dp(8); marginEnd = dp(8) }
-        setPadding(dp(16), 0, dp(16), 0)
+            LinearLayout.LayoutParams.WRAP_CONTENT, dp(40)
+        ).apply { topMargin = dp(10); marginEnd = dp(8) }
+        setPadding(dp(18), 0, dp(18), 0)
         setOnClickListener { onClick() }
     }
 
