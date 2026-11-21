@@ -1,0 +1,1 @@
+11-21 01:54:59.405   521  1708 V SplashScreenExceptionList: SplashScreen checking exception for package br.com.checkupcelular (target sdk:34) -> false

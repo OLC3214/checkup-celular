@@ -1,0 +1,7 @@
+NAO ACHEI: Varredura rápida
+TEMPO ESGOTADO esperando: Nota:
+NAO ACHEI: Varredura completa
+TEMPO ESGOTADO esperando: Resultado da varredura completa
+NAO ACHEI: Otimizar
+TEMPO ESGOTADO esperando: Memória RAM
+NAO ACHEI: Configurar VirusTotal
