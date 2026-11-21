@@ -89,7 +89,8 @@ object Cleaner {
             val reasons = mutableListOf<String>()
             if (accessibility) reasons += "quer controlar a tela"
             if (Manifest.permission.READ_SMS in perms || Manifest.permission.RECEIVE_SMS in perms) reasons += "lê SMS"
-            if (Manifest.permission.REQUEST_INSTALL_PACKAGES in perms) reasons += "instala outros apps"
+            // "instala outros apps" sozinho é comum (lojas, atualizadores); só pesa junto com outro sinal
+            if (reasons.isNotEmpty() && Manifest.permission.REQUEST_INSTALL_PACKAGES in perms) reasons += "instala outros apps"
             if (fake && reasons.isNotEmpty()) reasons += "se chama \"$label\""
             if (reasons.isEmpty()) null else reasons.joinToString(", ")
         }
