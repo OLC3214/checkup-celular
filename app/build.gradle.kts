@@ -23,9 +23,9 @@ android {
         if (ksFile != null && file(ksFile).exists()) {
             create("fixa") {
                 storeFile = file(ksFile)
-                storePassword = System.getenv("KEYSTORE_PASS")
+                storePassword = System.getenv("KEYSTORE_PASS")?.trim()
                 keyAlias = "checkup"
-                keyPassword = System.getenv("KEYSTORE_PASS")
+                keyPassword = System.getenv("KEYSTORE_PASS")?.trim()
             }
         }
     }
