@@ -175,13 +175,23 @@ class MainActivity : Activity() {
         updateBox.addView(row)
     }
 
+    private fun ago(t: Long): String {
+        val m = (System.currentTimeMillis() - t) / 60_000L
+        return when {
+            m < 1 -> "agora mesmo"
+            m < 60 -> "há $m min"
+            m < 60 * 24 -> "há ${m / 60} h"
+            else -> "há ${m / 60 / 24} dia(s)"
+        }
+    }
+
     private fun updateRing() {
         val sc = prefs.getInt("last_score", -1)
         ring.score = sc
         ring.ringColor = when { sc < 0 -> gray; sc < 50 -> red; sc < 80 -> orange; else -> green }
         val at = prefs.getLong("last_time", 0L)
         ringNote.text = if (sc < 0) "Ainda não verificado" else
-            "Última varredura: " + android.text.format.DateUtils.getRelativeTimeSpanString(at, System.currentTimeMillis(), 60_000L)
+            "Última varredura: " + ago(at)
     }
 
     override fun onResume() {

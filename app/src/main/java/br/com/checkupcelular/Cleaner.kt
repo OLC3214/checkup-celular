@@ -39,7 +39,8 @@ object Cleaner {
         out: MutableList<FileItem>, progress: (String) -> Unit
     ) {
         val children = dir.listFiles() ?: return
-        if (deep && depth > 0 && children.isEmpty()) {
+        // Pastas padrão do Android (DCIM, Documents...) ficam na raiz: nunca sugerir apagar
+        if (deep && depth >= 2 && children.isEmpty()) {
             out += FileItem(dir, "Pasta vazia", 0, junk = true)
             return
         }

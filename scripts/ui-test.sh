@@ -8,9 +8,10 @@ n=0
 shot() { n=$((n+1)); f=$(printf "%s/%02d-%s.png" $OUT $n "$1"); adb exec-out screencap -p > "$f"; echo "print: $f"; }
 texts() { python3 scripts/ui.py texts > "$OUT/$(printf %02d $n)-$1.txt"; }
 tap() {
+  sleep 3   # espera a tela parar de rolar (o dump falha durante a rolagem)
   for i in $(seq 1 10); do
     p=$(python3 scripts/ui.py "$1") && { adb shell input tap $p; echo "toquei: $1"; return 0; }
-    adb shell input swipe 540 1600 540 900 300; sleep 1
+    if [ $i -le 3 ]; then sleep 2; else adb shell input swipe 540 1600 540 900 300; sleep 2; fi
   done
   echo "NAO ACHEI: $1" | tee -a $OUT/erros.txt; return 1
 }
@@ -18,7 +19,7 @@ wait_text() {
   for i in $(seq 1 $2); do python3 scripts/ui.py "$1" >/dev/null && { echo "apareceu: $1 (${i}x5s)"; return 0; }; sleep 5; done
   echo "TEMPO ESGOTADO esperando: $1" | tee -a $OUT/erros.txt; return 1
 }
-top() { for i in 1 2 3 4 5 6; do adb shell input swipe 540 600 540 1800 200; done; sleep 1; }
+top() { for i in 1 2 3 4 5 6 7 8 9 10; do adb shell input swipe 540 600 540 1800 150; done; sleep 2; }
 pages() { # tira print de cada "página" do relatório
   for i in 1 2 3 4 5 6 7 8; do shot "$1-p$i"; texts "$1-p$i"; adb shell input swipe 540 1700 540 500 400; sleep 1; done
 }

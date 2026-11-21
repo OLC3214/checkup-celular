@@ -8,7 +8,7 @@ def dump():
         try:
             return ET.fromstring(out)
         except ET.ParseError:
-            pass
+            import time; time.sleep(1.5)
     return None
 
 def find(text):
