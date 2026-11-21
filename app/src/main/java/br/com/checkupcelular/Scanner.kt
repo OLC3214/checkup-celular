@@ -96,52 +96,46 @@ object Scanner {
             val label = ai.loadLabel(pm).toString()
             progress("Analisando app ${index + 1} de ${userApps.size}: $label")
 
-            val reasons = mutableListOf<String>()
-            var score = 0
+            // Cada sinal tem peso. "forte" = conta sempre; "fraco" = só conta se o app NÃO veio da loja oficial.
+            // Assim WhatsApp, bancos etc. da Play Store não aparecem só por pedirem permissões normais.
+            class Sig(val pts: Int, val text: String, val strong: Boolean)
+            val sigs = mutableListOf<Sig>()
             val perms = p.requestedPermissions?.toSet() ?: emptySet()
+            val hasIcon = pm.getLaunchIntentForPackage(pkg) != null
 
             val outsideStore = (installerOf(pm, pkg) ?: "") !in TRUSTED_STORES
-            if (outsideStore) { score += 2; reasons += "Instalado fora da loja oficial" }
+            if (outsideStore) sigs += Sig(2, "Instalado fora da loja oficial", true)
 
             val isAdmin = pkg in admins
-            if (isAdmin) { score += 3; reasons += "É administrador do aparelho (isso trava a desinstalação)" }
+            if (isAdmin) sigs += Sig(3, "É administrador do aparelho (isso trava a desinstalação)", true)
 
             val usesAccessibility = accessibility.contains("$pkg/")
-            if (usesAccessibility) { score += 3; reasons += "Usa Acessibilidade: consegue ler e clicar na tela" }
-            if (notifListeners.contains("$pkg/")) { score += 1; reasons += "Lê todas as suas notificações" }
+            if (usesAccessibility) sigs += Sig(if (outsideStore) 6 else 2, "Usa Acessibilidade: consegue ler e clicar na tela", true)
+            if (notifListeners.contains("$pkg/")) sigs += Sig(1, "Lê todas as suas notificações", false)
             if (Manifest.permission.READ_SMS in perms || Manifest.permission.RECEIVE_SMS in perms) {
-                score += 2; reasons += "Pode ler SMS (códigos de banco e de verificação)"
+                sigs += Sig(2, "Pode ler SMS (códigos de banco e de verificação)", false)
             }
-            if (Manifest.permission.SYSTEM_ALERT_WINDOW in perms) { score += 1; reasons += "Pode aparecer por cima de outros apps" }
-            if (Manifest.permission.REQUEST_INSTALL_PACKAGES in perms) { score += 1; reasons += "Pode instalar outros apps" }
-            if (pm.getLaunchIntentForPackage(pkg) == null) { score += 2; reasons += "Não tem ícone na tela (app escondido)" }
-
-            // Combinação típica de golpe bancário
-            if (outsideStore && usesAccessibility) score += 3
+            if (Manifest.permission.SYSTEM_ALERT_WINDOW in perms) sigs += Sig(1, "Pode aparecer por cima de outros apps", false)
+            if (Manifest.permission.REQUEST_INSTALL_PACKAGES in perms) sigs += Sig(1, "Pode instalar outros apps", false)
+            if (!hasIcon) sigs += Sig(2, "Não tem ícone na tela (app escondido)", false)
 
             if (deep) {
                 val lower = label.lowercase(Locale.ROOT)
                 if (outsideStore && FAMOUS_NAMES.any { lower.contains(it) }) {
-                    score += 4; reasons += "Usa nome de app conhecido (\"$label\") mas não veio da loja: possível app falso"
+                    sigs += Sig(4, "Usa nome de app conhecido (\"$label\") mas não veio da loja: possível app falso", true)
                 }
-                if (isDebugSigned(pm, pkg)) {
-                    score += 2; reasons += "Assinado com certificado de teste (apps legítimos não usam)"
-                }
-                if (ai.targetSdkVersion in 1..22) {
-                    score += 1; reasons += "Feito para Android muito antigo (pega permissões sem perguntar)"
-                }
+                if (isDebugSigned(pm, pkg)) sigs += Sig(2, "Assinado com certificado de teste (apps legítimos não usam)", true)
+                if (ai.targetSdkVersion in 1..22) sigs += Sig(1, "Feito para Android muito antigo (pega permissões sem perguntar)", false)
                 val days = (System.currentTimeMillis() - p.firstInstallTime) / 86_400_000L
-                if (outsideStore && days <= 7) {
-                    score += 1; reasons += "Instalado há $days dia(s)"
-                }
+                if (outsideStore && days <= 7) sigs += Sig(1, "Instalado há $days dia(s)", true)
                 val granted = grantedSensitive(p)
-                if (granted >= 5) {
-                    score += 1; reasons += "Tem $granted permissões sensíveis liberadas (câmera, microfone, contatos...)"
-                }
-                if (Manifest.permission.RECEIVE_BOOT_COMPLETED in perms && pm.getLaunchIntentForPackage(pkg) == null) {
-                    score += 1; reasons += "Liga sozinho quando o celular inicia"
-                }
+                if (granted >= 5) sigs += Sig(1, "Tem $granted permissões sensíveis liberadas (câmera, microfone, contatos...)", false)
+                if (Manifest.permission.RECEIVE_BOOT_COMPLETED in perms && !hasIcon) sigs += Sig(1, "Liga sozinho quando o celular inicia", false)
             }
+
+            val counted = if (outsideStore) sigs else sigs.filter { it.strong }
+            var score = counted.sumOf { it.pts }
+            val reasons = counted.map { it.text }.toMutableList()
 
             val spy = Threats.matchStalkerware(ctx, db, pkg)
             if (spy != null) {
