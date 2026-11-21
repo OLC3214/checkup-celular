@@ -65,6 +65,7 @@ class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("cfg", MODE_PRIVATE) }
     private val vtKey get() = prefs.getString("vt_key", "")?.trim() ?: ""
 
+    private lateinit var updateBox: LinearLayout
     private lateinit var ring: ScoreRing
     private lateinit var ringNote: TextView
 
@@ -85,6 +86,11 @@ class MainActivity : Activity() {
         // ---- Cabeçalho ----
         root.addView(label("Check-up", 28f, true))
         root.addView(label("por ${Config.NOME}", 13f, color = gray))
+
+        // ---- Aviso de atualização (aparece só quando tem versão nova) ----
+        updateBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(updateBox)
+        checkUpdate()
 
         // ---- Anel de saúde ----
         ring = ScoreRing(this).apply {
@@ -121,7 +127,7 @@ class MainActivity : Activity() {
         results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(results)
 
-        root.addView(label("Nada é apagado sem você confirmar.\nBanco de apps espiões: Echap stalkerware-indicators (CC-BY 4.0).", 11f, color = gray).apply {
+        root.addView(label("Versão ${Updater.currentName(this)} · Nada é apagado sem você confirmar.\nBanco de apps espiões: Echap stalkerware-indicators (CC-BY 4.0).", 11f, color = gray).apply {
             gravity = android.view.Gravity.CENTER; setPadding(0, dp(28), 0, 0)
         })
 
@@ -131,6 +137,42 @@ class MainActivity : Activity() {
             addView(root)
         }
         setContentView(scroll)
+    }
+
+    private fun checkUpdate() {
+        Thread {
+            val r = Updater.check(this) ?: return@Thread
+            runOnUiThread { showUpdate(r) }
+        }.start()
+    }
+
+    private fun showUpdate(r: Updater.Release) {
+        updateBox.removeAllViews()
+        val status = label("Versão ${r.name} disponível", 12f, color = gray)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(10), dp(12))
+            background = rounded(tint(blue, 0x1A), 20)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) }
+            addView(icon(R.drawable.ic_bolt, blue, 36, 18))
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), 0, dp(8), 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(label("Atualização disponível", 14f, true))
+                addView(status)
+            })
+            addView(smallButton("Atualizar", blue) {
+                if (!Updater.canInstall(this@MainActivity)) {
+                    status.text = "Autorize o Check-up a instalar atualizações e toque em Atualizar de novo."
+                    Updater.askInstallPermission(this@MainActivity)
+                } else {
+                    Updater.downloadAndInstall(this@MainActivity, r) { msg -> runOnUiThread { status.text = msg } }
+                }
+            }.apply { (layoutParams as LinearLayout.LayoutParams).topMargin = 0 })
+        }
+        updateBox.addView(row)
     }
 
     private fun updateRing() {

@@ -2,6 +2,8 @@ package br.com.checkupcelular
 
 /** Troque aqui para personalizar o app. */
 object Config {
+    /** Repositório no GitHub de onde o app baixa as atualizações. */
+    const val REPO = "OLC3214/checkup-celular"
     const val NOME = "Leonardo Cortez"
     const val SERVICO = "Check-up e limpeza de celular"
     const val WHATSAPP_EXIBIDO = "(14) 99626-1877"

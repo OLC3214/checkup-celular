@@ -7,6 +7,8 @@
     <!-- Otimizar: fechar apps em segundo plano e ver uso/tamanho dos apps -->
     <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <!-- Baixar e instalar as atualizações do próprio app -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Ver a lista de apps instalados (para achar os suspeitos) -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <!-- Abrir a tela de desinstalar (o usuário sempre confirma) -->
