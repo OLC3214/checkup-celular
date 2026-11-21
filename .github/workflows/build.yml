@@ -23,9 +23,14 @@ jobs:
             echo "::warning::Sem segredo KEYSTORE_B64: APK sai com assinatura de teste e não vai atualizar por cima"
             exit 0
           fi
-          # Remove espaços, quebras de linha e o que não for base64 (colagem com sujeira)
-          CLEAN=$(printf '%s' "$KEYSTORE_B64" | tr -cd 'A-Za-z0-9+/=')
-          PASS=$(printf '%s' "$KEYSTORE_PASS" | tr -d '[:space:]')
+          # Se colaram texto a mais junto, pega só o maior pedaço contínuo (a linha da chave)
+          LONGEST=$(printf '%s' "$KEYSTORE_B64" | tr -s '[:space:]' '\n' | awk '{ if (length($0) > m) { m = length($0); t = $0 } } END { print t }')
+          if [ ${#LONGEST} -ge 3000 ]; then CLEAN=$(printf '%s' "$LONGEST" | tr -cd 'A-Za-z0-9+/='); else CLEAN=$(printf '%s' "$KEYSTORE_B64" | tr -cd 'A-Za-z0-9+/='); fi
+          # Senha: 32 caracteres hexadecimais; se tiver texto a mais, pega só eles
+          PASS=$(printf '%s' "$KEYSTORE_PASS" | grep -oE '[0-9a-f]{32}' | head -1)
+          [ -z "$PASS" ] && PASS=$(printf '%s' "$KEYSTORE_PASS" | tr -d '[:space:]')
+          echo "::add-mask::$PASS"   # esconde a senha nos logs (o repositório é público)
+          echo "KEYSTORE_PASS_CLEAN=$PASS" >> $GITHUB_ENV
           echo "Tamanho KEYSTORE_B64 limpo: ${#CLEAN} (esperado 3620) | tamanho KEYSTORE_PASS: ${#PASS} (esperado 32)"
           if ! printf '%s' "$CLEAN" | base64 -d > $RUNNER_TEMP/checkup.jks 2>/dev/null; then
             echo "::error::KEYSTORE_B64 não é um base64 válido (tamanho ${#CLEAN}, esperado 3620). Cole a linha longa inteira de novo."
@@ -37,9 +42,7 @@ jobs:
           fi
           echo "KEYSTORE_FILE=$RUNNER_TEMP/checkup.jks" >> $GITHUB_ENV
           echo "::notice::Assinatura fixa: OK"
-      - run: gradle assembleDebug -Pvc=${{ github.run_number }}
-        env:
-          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+      - run: KEYSTORE_PASS="$KEYSTORE_PASS_CLEAN" gradle assembleDebug -Pvc=${{ github.run_number }}
       - run: cp app/build/outputs/apk/debug/app-debug.apk CheckupCelular.apk
       - uses: actions/upload-artifact@v4
         with:
